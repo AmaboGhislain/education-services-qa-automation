@@ -24,3 +24,8 @@ coverage.xml
 
 # Generated test reports and screenshots
 reports/
+
+# Local SQLite databases
+data/*.db
+data/*.sqlite
+data/*.sqlite3
