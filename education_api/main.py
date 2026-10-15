@@ -50,18 +50,20 @@ class ResultResponse(ResultCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
 class PaymentCreate(BaseModel):
     payment_reference: str = Field(min_length=1, max_length=50)
     student_id: int = Field(gt=0)
     amount: float = Field(gt=0, allow_inf_nan=False)
     currency: str = Field(default="XAF", pattern="^XAF$")
-    status: str = Field(default="PENDING", pattern="^(PENDING|SUCCESS|FAILED)$")
+
 
 
 class PaymentResponse(PaymentCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    status: str
     created_at: datetime
 
 

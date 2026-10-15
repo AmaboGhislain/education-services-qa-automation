@@ -66,7 +66,7 @@ def test_create_payment(client):
             "student_id": student_id,
             "amount": 75000,
             "currency": "XAF",
-            "status": "PENDING",
+            
         },
     )
 
@@ -94,7 +94,7 @@ def test_reject_invalid_payment_amount(client, amount):
             "student_id": student_id,
             "amount": amount,
             "currency": "XAF",
-            "status": "PENDING",
+            
         },
     )
 
@@ -112,7 +112,7 @@ def test_reject_invalid_payment_currency(client):
             "student_id": student_id,
             "amount": 75000,
             "currency": "USD",
-            "status": "PENDING",
+            
         },
     )
 
@@ -127,7 +127,7 @@ def test_reject_payment_for_nonexistent_student(client):
             "student_id": 99999,
             "amount": 75000,
             "currency": "XAF",
-            "status": "PENDING",
+            
         },
     )
 
@@ -144,7 +144,7 @@ def test_reject_duplicate_payment_reference(client):
         "student_id": student_id,
         "amount": 75000,
         "currency": "XAF",
-        "status": "PENDING",
+        
     }
 
     first_response = client.post("/payments", json=payment_data)
@@ -166,7 +166,7 @@ def test_get_payment_by_id(client):
             "student_id": student_id,
             "amount": 50000,
             "currency": "XAF",
-            "status": "PENDING",
+            
         },
     )
 
@@ -194,7 +194,7 @@ def test_get_student_payments(client):
             "student_id": student_id,
             "amount": 50000,
             "currency": "XAF",
-            "status": "PENDING",
+            
         },
     )
 
@@ -205,7 +205,7 @@ def test_get_student_payments(client):
             "student_id": student_id,
             "amount": 25000,
             "currency": "XAF",
-            "status": "PENDING",
+            
         },
     )
 
@@ -234,3 +234,22 @@ def test_get_payments_for_nonexistent_student(client):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Student not found"
+
+
+def test_client_cannot_set_initial_payment_status(client):
+    student_response = create_test_student(client)
+    student_id = student_response.json()["id"]
+
+    payment_response = client.post(
+        "/payments",
+        json={
+            "payment_reference": "PAY-SECURITY-001",
+            "student_id": student_id,
+            "amount": 75000,
+            "currency": "XAF",
+            "status": "SUCCESS",
+        },
+    )
+
+    assert payment_response.status_code == 201
+    assert payment_response.json()["status"] == "PENDING"
