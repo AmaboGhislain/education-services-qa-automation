@@ -1,4 +1,5 @@
-
+from contextlib import asynccontextmanager
+from datetime import datetime
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -8,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from education_api.database import Base, engine, get_db
-from education_api.models import Result, Student
+from education_api.models import Payment, Result, Student
 
 
 @asynccontextmanager
@@ -49,12 +50,87 @@ class ResultResponse(ResultCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+class PaymentCreate(BaseModel):
+    payment_reference: str = Field(min_length=1, max_length=50)
+    student_id: int = Field(gt=0)
+    amount: float = Field(gt=0, allow_inf_nan=False)
+    currency: str = Field(default="XAF", pattern="^XAF$")
+    status: str = Field(default="PENDING", pattern="^(PENDING|SUCCESS|FAILED)$")
+
+
+class PaymentResponse(PaymentCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
 
 
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
 
+@app.post(
+    "/payments",
+    response_model=PaymentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_payment(payload: PaymentCreate, db: Session = Depends(get_db)):
+    student = db.get(Student, payload.student_id)
+
+    if student is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found",
+        )
+
+    payment = Payment(**payload.model_dump())
+    db.add(payment)
+
+    try:
+        db.commit()
+        db.refresh(payment)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payment reference already exists",
+        )
+
+    return payment
+
+
+@app.get("/payments/{payment_id}", response_model=PaymentResponse)
+def get_payment(payment_id: int, db: Session = Depends(get_db)):
+    payment = db.get(Payment, payment_id)
+
+    if payment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payment not found",
+        )
+
+    return payment
+
+
+@app.get(
+    "/students/{student_id}/payments",
+    response_model=list[PaymentResponse],
+)
+def get_student_payments(student_id: int, db: Session = Depends(get_db)):
+    student = db.get(Student, student_id)
+
+    if student is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Student not found",
+        )
+
+    statement = (
+        select(Payment)
+        .where(Payment.student_id == student_id)
+        .order_by(Payment.id)
+    )
+    return db.scalars(statement).all()
 
 @app.post(
     "/students",

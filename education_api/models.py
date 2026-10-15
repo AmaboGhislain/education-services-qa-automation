@@ -1,5 +1,12 @@
 
-from sqlalchemy import CheckConstraint, ForeignKey, String
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    String,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from education_api.database import Base
@@ -38,3 +45,42 @@ class Result(Base):
     academic_year: Mapped[str] = mapped_column(String(20), nullable=False)
 
     student: Mapped["Student"] = relationship(back_populates="results")
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="positive_payment_amount"),
+        CheckConstraint(
+            "status IN ('PENDING', 'SUCCESS', 'FAILED')",
+            name="valid_payment_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    payment_reference: Mapped[str] = mapped_column(
+        String(50), unique=True, index=True, nullable=False
+    )
+
+    student_id: Mapped[int] = mapped_column(
+        ForeignKey("students.id"), nullable=False, index=True
+    )
+
+    amount: Mapped[float] = mapped_column(nullable=False)
+
+    currency: Mapped[str] = mapped_column(
+        String(3), default="XAF", nullable=False
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(10), default="PENDING", nullable=False
+    )
+
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    student: Mapped["Student"] = relationship()
