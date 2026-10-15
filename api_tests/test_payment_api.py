@@ -253,3 +253,201 @@ def test_client_cannot_set_initial_payment_status(client):
 
     assert payment_response.status_code == 201
     assert payment_response.json()["status"] == "PENDING"
+
+
+def test_verify_pending_payment_as_successful(client):
+    student_response = create_test_student(client)
+    student_id = student_response.json()["id"]
+
+    create_response = client.post(
+        "/payments",
+        json={
+            "payment_reference": "PAY-VERIFY-SUCCESS-001",
+            "student_id": student_id,
+            "amount": 75000,
+            "currency": "XAF",
+        },
+    )
+
+    assert create_response.status_code == 201
+    payment_id = create_response.json()["id"]
+    assert create_response.json()["status"] == "PENDING"
+
+    verify_response = client.post(
+    f"/payments/{payment_id}/verify",
+    json={"outcome": "SUCCESS"},
+    headers={"X-Simulator-Key": "local-test-simulator-key"},
+)
+
+    assert verify_response.status_code == 200
+    assert verify_response.json()["status"] == "SUCCESS"
+
+
+def test_verify_pending_payment_as_failed(client):
+    student_response = create_test_student(client)
+    student_id = student_response.json()["id"]
+
+    create_response = client.post(
+        "/payments",
+        json={
+            "payment_reference": "PAY-VERIFY-FAILED-001",
+            "student_id": student_id,
+            "amount": 50000,
+            "currency": "XAF",
+        },
+    )
+
+    assert create_response.status_code == 201
+    payment_id = create_response.json()["id"]
+    assert create_response.json()["status"] == "PENDING"
+
+    verify_response = client.post(
+        f"/payments/{payment_id}/verify",
+        json={"outcome": "FAILED"},
+        headers={"X-Simulator-Key": "local-test-simulator-key"},
+    )
+
+    assert verify_response.status_code == 200
+    assert verify_response.json()["status"] == "FAILED"
+
+
+def test_cannot_verify_payment_twice(client):
+    student_response = create_test_student(client)
+    student_id = student_response.json()["id"]
+
+    create_response = client.post(
+        "/payments",
+        json={
+            "payment_reference": "PAY-VERIFY-ONCE-001",
+            "student_id": student_id,
+            "amount": 60000,
+            "currency": "XAF",
+        },
+    )
+
+    assert create_response.status_code == 201
+    payment_id = create_response.json()["id"]
+
+    first_verification = client.post(
+        f"/payments/{payment_id}/verify",
+        json={"outcome": "SUCCESS"},
+        headers={"X-Simulator-Key": "local-test-simulator-key"},
+    )
+
+    assert first_verification.status_code == 200
+    assert first_verification.json()["status"] == "SUCCESS"
+
+    second_verification = client.post(
+        f"/payments/{payment_id}/verify",
+        json={"outcome": "FAILED"},
+        headers={"X-Simulator-Key": "local-test-simulator-key"},
+    )
+
+    assert second_verification.status_code == 409
+    assert second_verification.json()["detail"] == (
+        "Only pending payments can be verified"
+    )
+
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    ["UNKNOWN", "PENDING", "", "SUCCESSFUL"],
+)
+def test_reject_invalid_payment_verification_outcome(client, outcome):
+    student_response = create_test_student(client)
+    student_id = student_response.json()["id"]
+
+    create_response = client.post(
+        "/payments",
+        json={
+            "payment_reference": f"PAY-INVALID-OUTCOME-{len(outcome)}",
+            "student_id": student_id,
+            "amount": 40000,
+            "currency": "XAF",
+        },
+    )
+
+    assert create_response.status_code == 201
+    payment_id = create_response.json()["id"]
+
+    verify_response = client.post(
+        f"/payments/{payment_id}/verify",
+        json={"outcome": outcome},
+    )
+
+    assert verify_response.status_code == 422
+
+
+def test_verify_nonexistent_payment(client):
+    response = client.post(
+        "/payments/99999/verify",
+        json={"outcome": "SUCCESS"},
+        headers={"X-Simulator-Key": "local-test-simulator-key"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Payment not found"
+
+
+def test_reject_payment_verification_without_api_key(client):
+    create_test_student(client)
+
+    payment_response = client.post(
+        "/payments",
+        json={
+            "payment_reference": "PAY-NO-KEY-001",
+            "student_id": 1,
+            "amount": 5000,
+            "currency": "XAF",
+        },
+    )
+
+    assert payment_response.status_code == 201
+    payment_id = payment_response.json()["id"]
+
+    response = client.post(
+        f"/payments/{payment_id}/verify",
+        json={"outcome": "SUCCESS"},
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == (
+        "Invalid or missing simulator API key"
+    )
+
+    payment_check = client.get(f"/payments/{payment_id}")
+    assert payment_check.status_code == 200
+    assert payment_check.json()["status"] == "PENDING"
+
+    
+def test_reject_payment_verification_with_wrong_api_key(client):
+    create_test_student(client)
+
+    payment_response = client.post(
+        "/payments",
+        json={
+            "payment_reference": "PAY-WRONG-KEY-001",
+            "student_id": 1,
+            "amount": 5000,
+            "currency": "XAF",
+        },
+    )
+
+    assert payment_response.status_code == 201
+    payment_id = payment_response.json()["id"]
+
+    response = client.post(
+        f"/payments/{payment_id}/verify",
+        json={"outcome": "SUCCESS"},
+        headers={"X-Simulator-Key": "wrong-key"},
+    )
+
+    assert response.status_code == 401
+
+    payment_check = client.get(f"/payments/{payment_id}")
+    assert payment_check.status_code == 200
+    assert payment_check.json()["status"] == "PENDING"
+
+
+

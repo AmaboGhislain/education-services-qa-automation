@@ -1,8 +1,10 @@
+
+import os
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime
-from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -10,6 +12,13 @@ from sqlalchemy.orm import Session
 
 from education_api.database import Base, engine, get_db
 from education_api.models import Payment, Result, Student
+
+
+SIMULATOR_API_KEY = os.getenv(
+    "SIMULATOR_API_KEY",
+    "local-test-simulator-key",
+)
+
 
 
 @asynccontextmanager
@@ -67,6 +76,10 @@ class PaymentResponse(PaymentCreate):
     created_at: datetime
 
 
+class PaymentVerification(BaseModel):
+    outcome: str = Field(pattern="^(SUCCESS|FAILED)$")
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
@@ -110,6 +123,53 @@ def get_payment(payment_id: int, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Payment not found",
         )
+
+    return payment
+
+
+@app.post(
+    "/payments/{payment_id}/verify",
+    response_model=PaymentResponse,
+)
+def verify_payment(
+    payment_id: int,
+    payload: PaymentVerification,
+    x_simulator_key: str | None = Header(
+        default=None,
+        alias="X-Simulator-Key",
+    ),
+    db: Session = Depends(get_db),
+):
+
+    if (
+        x_simulator_key is None
+        or not secrets.compare_digest(
+            x_simulator_key,
+            SIMULATOR_API_KEY,
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing simulator API key",
+        )
+    payment = db.get(Payment, payment_id)
+
+    if payment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Payment not found",
+        )
+
+    if payment.status != "PENDING":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending payments can be verified",
+        )
+
+    payment.status = payload.outcome
+
+    db.commit()
+    db.refresh(payment)
 
     return payment
 
