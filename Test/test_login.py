@@ -28,10 +28,7 @@ def test_invalid_login(driver, username, password):
 
     login_page = LoginPage(driver)
 
-    login_page.login(
-        "wrong_user",
-        "wrong_password"
-    )
+    login_page.login(username, password)
 
     assert login_page.is_error_message_displayed()
 

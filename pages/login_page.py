@@ -14,7 +14,7 @@ class LoginPage:
         self.driver = driver
 
     def wait_for_element(self, locator):
-        return WebDriverWait(self.driver, 1000).until(
+        return WebDriverWait(self.driver, 10).until(
             EC.visibility_of_element_located(locator)
         )
 

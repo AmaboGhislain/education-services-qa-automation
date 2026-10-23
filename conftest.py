@@ -5,12 +5,15 @@ from selenium import webdriver
 
 @pytest.fixture
 def driver():
-    driver = webdriver.Chrome()
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless=new")
+    options.add_argument("--window-size=1920,1080")
 
-    yield driver
-
-    driver.quit()
-
+    browser = webdriver.Chrome(options=options)
+    try:
+        yield browser
+    finally:
+        browser.quit()
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
