@@ -11,7 +11,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from education_api.database import Base, engine, get_db
-from education_api.models import Payment, Result, Student
+from education_api.models import (
+    Payment,
+    Result,
+    SalaryPayment,
+    Student,
+    Teacher,
+)
 
 
 SIMULATOR_API_KEY = os.getenv(
@@ -80,10 +86,204 @@ class PaymentVerification(BaseModel):
     outcome: str = Field(pattern="^(SUCCESS|FAILED)$")
 
 
+class TeacherCreate(BaseModel):
+    employee_number: str = Field(min_length=1, max_length=30)
+    full_name: str = Field(min_length=1, max_length=120)
+    department: str = Field(min_length=1, max_length=100)
+
+
+class TeacherResponse(TeacherCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+
+
+class SalaryPaymentCreate(BaseModel):
+    payment_reference: str = Field(min_length=1, max_length=50)
+    teacher_id: int = Field(gt=0)
+    amount: float = Field(gt=0, allow_inf_nan=False)
+    currency: str = Field(default="XAF", pattern="^XAF$")
+    payment_month: str = Field(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+class SalaryPaymentResponse(SalaryPaymentCreate):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    status: str
+    created_at: datetime
+
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
 
+
+@app.post(
+    "/teachers",
+    response_model=TeacherResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_teacher(
+    payload: TeacherCreate,
+    db: Session = Depends(get_db),
+):
+    teacher = Teacher(**payload.model_dump())
+    db.add(teacher)
+
+    try:
+        db.commit()
+        db.refresh(teacher)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Employee number already exists",
+        )
+
+    return teacher
+
+
+@app.get("/teachers", response_model=list[TeacherResponse])
+def list_teachers(db: Session = Depends(get_db)):
+    return db.scalars(select(Teacher).order_by(Teacher.id)).all()
+
+
+@app.get("/teachers/{teacher_id}", response_model=TeacherResponse)
+def get_teacher(
+    teacher_id: int,
+    db: Session = Depends(get_db),
+):
+    teacher = db.get(Teacher, teacher_id)
+
+    if teacher is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Teacher not found",
+        )
+
+    return teacher
+
+
+@app.post(
+    "/salary-payments",
+    response_model=SalaryPaymentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_salary_payment(
+    payload: SalaryPaymentCreate,
+    db: Session = Depends(get_db),
+):
+    teacher = db.get(Teacher, payload.teacher_id)
+
+    if teacher is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Teacher not found",
+        )
+
+    salary_payment = SalaryPayment(**payload.model_dump())
+    db.add(salary_payment)
+
+    try:
+        db.commit()
+        db.refresh(salary_payment)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Payment reference already exists",
+        )
+
+    return salary_payment
+
+
+@app.get(
+    "/salary-payments/{salary_payment_id}",
+    response_model=SalaryPaymentResponse,
+)
+def get_salary_payment(
+    salary_payment_id: int,
+    db: Session = Depends(get_db),
+):
+    salary_payment = db.get(SalaryPayment, salary_payment_id)
+
+    if salary_payment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Salary payment not found",
+        )
+
+    return salary_payment
+
+@app.post(
+    "/salary-payments/{salary_payment_id}/verify",
+    response_model=SalaryPaymentResponse,
+)
+def verify_salary_payment(
+    salary_payment_id: int,
+    payload: PaymentVerification,
+    x_simulator_key: str | None = Header(
+        default=None,
+        alias="X-Simulator-Key",
+    ),
+    db: Session = Depends(get_db),
+):
+    if (
+        x_simulator_key is None
+        or not secrets.compare_digest(
+            x_simulator_key,
+            SIMULATOR_API_KEY,
+        )
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing simulator API key",
+        )
+
+    salary_payment = db.get(SalaryPayment, salary_payment_id)
+
+    if salary_payment is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Salary payment not found",
+        )
+
+    if salary_payment.status != "PENDING":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Only pending salary payments can be verified",
+        )
+
+    salary_payment.status = payload.outcome
+    db.commit()
+    db.refresh(salary_payment)
+
+    return salary_payment
+
+@app.get(
+    "/teachers/{teacher_id}/salary-payments",
+    response_model=list[SalaryPaymentResponse],
+)
+def get_teacher_salary_payments(
+    teacher_id: int,
+    db: Session = Depends(get_db),
+):
+    teacher = db.get(Teacher, teacher_id)
+
+    if teacher is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Teacher not found",
+        )
+
+    statement = (
+        select(SalaryPayment)
+        .where(SalaryPayment.teacher_id == teacher_id)
+        .order_by(SalaryPayment.id)
+    )
+    return db.scalars(statement).all()
 @app.post(
     "/payments",
     response_model=PaymentResponse,
@@ -112,8 +312,6 @@ def create_payment(payload: PaymentCreate, db: Session = Depends(get_db)):
         )
 
     return payment
-
-
 @app.get("/payments/{payment_id}", response_model=PaymentResponse)
 def get_payment(payment_id: int, db: Session = Depends(get_db)):
     payment = db.get(Payment, payment_id)

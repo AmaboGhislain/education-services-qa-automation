@@ -7,7 +7,7 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 
 from education_api.database import Base
 
@@ -84,3 +84,67 @@ class Payment(Base):
     )
 
     student: Mapped["Student"] = relationship()
+
+class Teacher(Base):
+    __tablename__ = "teachers"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    employee_number: Mapped[str] = mapped_column(
+        String(30), unique=True, index=True, nullable=False
+    )
+
+    full_name: Mapped[str] = mapped_column(
+        String(120), nullable=False
+    )
+
+    department: Mapped[str] = mapped_column(
+        String(100), nullable=False
+    )
+
+
+class SalaryPayment(Base):
+    __tablename__ = "salary_payments"
+
+    __table_args__ = (
+        CheckConstraint(
+            "amount > 0",
+            name="positive_salary_amount",
+        ),
+        CheckConstraint(
+            "status IN ('PENDING', 'SUCCESS', 'FAILED')",
+            name="valid_salary_payment_status",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+
+    payment_reference: Mapped[str] = mapped_column(
+        String(50), unique=True, index=True, nullable=False
+    )
+
+    teacher_id: Mapped[int] = mapped_column(
+        ForeignKey("teachers.id"), nullable=False, index=True
+    )
+
+    amount: Mapped[float] = mapped_column(nullable=False)
+
+    currency: Mapped[str] = mapped_column(
+        String(3), default="XAF", nullable=False
+    )
+
+    payment_month: Mapped[str] = mapped_column(
+        String(7), nullable=False
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(10), default="PENDING", nullable=False
+    )
+
+    created_at: Mapped[DateTime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    teacher: Mapped["Teacher"] = relationship()
