@@ -1,5 +1,6 @@
 # Education Services QA Automation Project
 
+[![API tests](https://github.com/AmaboGhislain/education-services-qa-automation/actions/workflows/tests.yml/badge.svg)](https://github.com/AmaboGhislain/education-services-qa-automation/actions/workflows/tests.yml)
 A Python QA automation portfolio for testing education-related APIs and workflows. The project includes a database-backed FastAPI application, API tests, browser tests, and examples of validation and simulated payment verification.
 
 ## Project objectives
