@@ -1,4 +1,4 @@
-name: API tests
+name: Python tests
 
 on:
   push:
@@ -29,11 +29,5 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Run API and browser tests
-        run: >
-          python -m pytest -q
-          api_tests/test_education_api.py
-          api_tests/test_payment_api.py
-          api_tests/test_salary_payment_api.py
-          api_tests/test_school_fees.py
-          Test
+      - name: Run all tests
+        run: python -m pytest -q
