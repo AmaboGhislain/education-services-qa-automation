@@ -29,5 +29,16 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      - name: Run all tests
-        run: python -m pytest -q
+      - name: Run all tests and create HTML report
+        run: |
+          mkdir -p reports
+          python -m pytest -q --html=reports/full_test_report.html --self-contained-html
+
+      - name: Upload HTML test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pytest-html-report
+          path: reports/full_test_report.html
+          if-no-files-found: warn
+          retention-days: 14
